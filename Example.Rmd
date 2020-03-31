@@ -1,0 +1,181 @@
+---
+title: "Datathon for Social Good 2020 - Community Hubs Australia"
+author: "Little Big Stories"
+date: "30/03/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+This is an R Markdown report for Community Hubs Australia. The report was written and compiled for the Datathon for Social Good 2020. 
+
+I would like to acknowledge the time and effort our mentor, Ilana Lichtenstein spent assisting in the implementation of the R code used for the time series.
+
+To keep the identities of the hubs and their community participants secure the data was anonymized, before we received it.
+Because the data is anonymized there are several obvious but interesting questions we were unable to ask, including, but not limited to; how does the location of a hub affect community participation? How many of the community hub participants return? What is the average number of visits for a family? 
+
+The question this report lays the foundation to ask is; Is there a relationship between the number of days a community hub is active each quarter and any of the other recorded variables?
+The report contains a time series which visualises the number of days each hub has been active, per quarter, since Community Hubs Australia opened in 2016. An active day has been defined as a day on which at least one activity was recorded, with at least one participant.
+
+## Data cleaning
+The data provided by Community Hubs Australia was raw. The data cleaning that was undertaken reduced the original dataset from 163,150 observations of 31 variables, down to 41,268 of 14 variables. A large portion  of the data points removed were referrals or observations with 0 participants. Referalls and observations for each hub have been summarized in the Power BI dashboard that accomponies this report.
+. 
+```{r load-packages, include= FALSE}
+#Packages needed for script
+install.packages("ggplot2")
+install.packages("zoo")
+install.packages("tidyr")
+install.packages("reshape2")
+install.packages("chron")
+require(ggplot2) # plotting tool
+require(reshape2) # for widen and lengthening data frames 
+
+#Libraries needed for script 
+library(magrittr)
+library(dplyr)
+library(tibble)
+library(packrat)
+library(zoo)
+library(tidyr)
+library(tidyselect)
+library(crayon)
+library(ggplot2)
+library(chron)
+library(stringr)
+
+```
+```{r, echo=FALSE, results="hide"}
+
+InternalTrack <- read.csv("Datathon_Internal.csv")
+InternalTrack$HubRandomID <- as.character(InternalTrack$HubRandomID)
+InternalTrack$ActivityDate <- as.Date(InternalTrack$ActivityDate, "%d/%m/%y")
+InternalTrack_1<- InternalTrack[c(2:7,9,22:28)]
+InternalTrack %>% select(ActivityDate) %>% distinct %>% nrow() 
+CountTibble<- InternalTrack %>% group_by(HubRandomID) %>% summarise(count= n())  
+InternalTrack2.0<-InternalTrack_1 %>% filter(ProgrammeID.1!=69)
+InternalTrack3.0 <- InternalTrack2.0 %>% filter(ChildParticipants!= 0, AdultParticipants!=0, ReferralParticipants==0)
+df<- data.frame(HubID=InternalTrack3.0$HubRandomID, ActivityDate = InternalTrack3.0$ActivityDate)
+df %<>% mutate(FormatDate=format(ActivityDate, "%b-%Y"))
+df_unique_dates <- df %>% unique()
+```
+Since opening in 2016 community hubs have been active for 430 days.  
+
+```{r,echo=FALSE}
+# compute number of unique dates per month for each HubID 
+df_HubActiveDayCount<- df_unique_dates %>% 
+  group_by(HubID, FormatDate) %>% summarise(n=n())
+```
+The histogram shows that 1 to 4 days per month are the most frequebtly recorded active days per hub. The recorded frequency of 5+ days per month is much lower and has an almost uniform distribution. The lack of variability showed us that doing a time series on the active days each month, in each hub will not show much growth or change. We decided to instead run the time series analysis on the number of active days per quarter. 
+
+
+
+```{r,echo= FALSE}
+       
+hist(df_HubActiveDayCount$n, xlab = "Active number of days per month", main = "Histogram of the number of active days per month in all hubs" , breaks = 23, xlim = c(1,23))
+
+
+```
+ 
+```{r,  echo=FALSE}
+df_numactivedays_per_month=df_HubActiveDayCount %>% pivot_wider(id_cols= HubID,names_from=FormatDate , values_from=n)
+df_numactivedays_per_month[is.na(df_numactivedays_per_month)]<-0
+df_numactivedays_per_month_chron <- df_numactivedays_per_month[, c("HubID","Jan-2016", "Feb-2016", "Mar-2016", "Apr-2016", "May-2016", "Jun-2016", "Jul-2016", "Aug-2016","Sep-2016", "Oct-2016", "Nov-2016", "Dec-2016" ,"Jan-2017", "Feb-2017", "Mar-2017", "Apr-2017", "May-2017", "Jun-2017", "Jul-2017", "Aug-2017","Sep-2017", "Oct-2017", "Nov-2017", "Dec-2017", "Jan-2018", "Feb-2018"
+                                                                   ,"Mar-2018","Apr-2018", "May-2018", "Jun-2018", "Jul-2018","Aug-2018", "Sep-2018", "Oct-2018", "Nov-2018", "Dec-2018", "Jan-2019", "Feb-2019","Mar-2019", "Apr-2019", "May-2019", "Jun-2019", "Jul-2019", "Aug-2019", "Sep-2019", "Oct-2019", "Nov-2019", "Dec-2019")]
+
+
+active_numdays_q <- df_numactivedays_per_month_chron[1]
+#2016 quarters
+active_numdays_q$`Q1-2016` <-c( df_numactivedays_per_month_chron$`Jan-2016` + df_numactivedays_per_month_chron$`Feb-2016` + df_numactivedays_per_month_chron$`Mar-2016`)
+active_numdays_q$`Q2-2016` <-c( df_numactivedays_per_month_chron$`Apr-2016` + df_numactivedays_per_month_chron$`May-2016` + df_numactivedays_per_month_chron$`Jun-2016`)
+active_numdays_q$`Q3-2016` <-c( df_numactivedays_per_month_chron$`Jul-2016` + df_numactivedays_per_month_chron$`Aug-2016` + df_numactivedays_per_month_chron$`Sep-2016`)
+active_numdays_q$`Q4-2016` <-c( df_numactivedays_per_month_chron$`Oct-2016` + df_numactivedays_per_month_chron$`Nov-2016` + df_numactivedays_per_month_chron$`Dec-2016`)
+
+#2017 quarters
+active_numdays_q$`Q1-2017` <-c( df_numactivedays_per_month_chron$`Jan-2017` + df_numactivedays_per_month_chron$`Feb-2017` + df_numactivedays_per_month_chron$`Mar-2017`)
+active_numdays_q$`Q2-2017` <-c( df_numactivedays_per_month_chron$`Apr-2017` + df_numactivedays_per_month_chron$`May-2017` + df_numactivedays_per_month_chron$`Jun-2017`)
+active_numdays_q$`Q3-2017` <-c( df_numactivedays_per_month_chron$`Jul-2017` + df_numactivedays_per_month_chron$`Aug-2017` + df_numactivedays_per_month_chron$`Sep-2017`)
+active_numdays_q$`Q4-2017` <-c( df_numactivedays_per_month_chron$`Oct-2017` + df_numactivedays_per_month_chron$`Nov-2017` + df_numactivedays_per_month_chron$`Dec-2017`)
+
+#2018 quarters
+active_numdays_q$`Q1-2018` <-c( df_numactivedays_per_month_chron$`Jan-2018` + df_numactivedays_per_month_chron$`Feb-2018` + df_numactivedays_per_month_chron$`Mar-2018`)
+active_numdays_q$`Q2-2018` <-c( df_numactivedays_per_month_chron$`Apr-2018` + df_numactivedays_per_month_chron$`May-2018` + df_numactivedays_per_month_chron$`Jun-2018`)
+active_numdays_q$`Q3-2018` <-c( df_numactivedays_per_month_chron$`Jul-2018` + df_numactivedays_per_month_chron$`Aug-2018` + df_numactivedays_per_month_chron$`Sep-2018`)
+active_numdays_q$`Q4-2018` <-c( df_numactivedays_per_month_chron$`Oct-2018` + df_numactivedays_per_month_chron$`Nov-2018` + df_numactivedays_per_month_chron$`Dec-2018`)
+
+#2019 quarters
+active_numdays_q$`Q1-2019` <-c( df_numactivedays_per_month_chron$`Jan-2019` + df_numactivedays_per_month_chron$`Feb-2019` + df_numactivedays_per_month_chron$`Mar-2019`)
+active_numdays_q$`Q2-2019` <-c( df_numactivedays_per_month_chron$`Apr-2019` + df_numactivedays_per_month_chron$`May-2019` + df_numactivedays_per_month_chron$`Jun-2019`)
+active_numdays_q$`Q3-2019` <-c( df_numactivedays_per_month_chron$`Jul-2019` + df_numactivedays_per_month_chron$`Aug-2016` + df_numactivedays_per_month_chron$`Sep-2016`)
+active_numdays_q$`Q4-2019` <-c( df_numactivedays_per_month_chron$`Oct-2016` + df_numactivedays_per_month_chron$`Nov-2019` + df_numactivedays_per_month_chron$`Dec-2019`)
+
+quarters_list<-colnames(active_numdays_q)[-c(1)] # all column names except first 
+
+date_names<-as.Date(as.yearqtr(quarters_list, format = "Q%q-%Y")) # convert quarters to date format
+
+# Transpose df ('t' is a transpose funciton) so rows are dates and columns are hubs
+TS_DF<-t(active_numdays_q[,-c(1)]) %>% apply(2,function(x){as.numeric(x)})
+colnames(TS_DF)<-active_numdays_q$HubID
+rownames(TS_DF)<-colnames(active_numdays_q[-c(1)])
+
+# create new df by binding date column with hub columns
+TS_DF_with_dates <- data.frame(time=date_names) %>% bind_cols(data.frame(TS_DF))
+colnames(TS_DF_with_dates)<- str_replace_all(colnames(TS_DF_with_dates),"X","") # remove "X" from column names which strangely got added in previous step 
+
+# convert to long format
+df <- melt(TS_DF_with_dates ,  id.vars = 'time', variable.name = 'series')
+# head(df) # use this to get a look at your data if you need to 
+```
+
+##Time series visualization 
+
+The first plot below, plots the active days per quarter for all hubs. 
+
+```{r,echo=FALSE}
+
+# plot all hubs on the one plot
+ggplot(df, aes(time,value)) + geom_line(aes(colour = series))
+```
+
+The plot below shows an example how you can plot a small number of hubs against each other. This could be useful if trying to determine if a hub is growing at the same rate as other hubs that share similar charachteristics (e.g. location, socio-econmic status, population)
+```{r, echo=TRUE}
+
+ggplot(df %>% filter(series==11227 | series==11491), aes(time,value)) + geom_line(aes(colour = series))
+```
+
+  The following eight plots visualise the activity of all hubs across the lifetime of Community Hubs Australia. Each one contains the time series of 5 random hubs plotted against each other. 
+  
+ Across many of the 80 hubs, there are two distinguishing features in the time series plots. The first is that before mid-2018 active hubs typically opened for ten days a quarter with no year on year growth rate apparent. The second is a sharp increase in activity in mid-2018 which then falls again quickly. 
+ 
+Further analysis of the time series could ask questions including how does the number of days that a hub is open per quarter effect referral numbers, the participation of adults and children, and compare the amount of activity at a hub to external data such as feelings of community safety, bullying, improvement in childhood outcomes.
+
+
+```{r, echo=FALSE}
+par(mfrow=c(4,2))
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+hub_samples=sample(active_numdays_q$HubID,5) %>% as.character()
+ggplot(df %>% filter(series %in% hub_samples), aes(time,value)) + geom_line(aes(colour = series))
+
+```
